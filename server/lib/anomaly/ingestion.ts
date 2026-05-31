@@ -22,12 +22,16 @@ function toMockMetadata(
     sourceKind: isFallback ? 'fallback' : 'mock',
     providerName: 'fixtures',
     sourceStatus: isFallback ? 'degraded' : 'healthy',
+    syncStatus: 'healthy',
+    dataState: 'ready',
     freshness: 'fresh',
     degraded: isFallback,
     providerObservedAt: latestObservedAt,
     lastSuccessfulObservedAt: latestObservedAt,
+    lastSyncAttemptedAt: latestObservedAt,
+    lastSyncSucceededAt: latestObservedAt,
     persistedAt: undefined,
-    fallbackReason,
+    syncFailureReason: fallbackReason,
     notes: isFallback ? [`Scenario ${scenarioId} is using mock fallback.`] : [],
   }
 }
@@ -51,19 +55,16 @@ export class MockAircraftSnapshotSource implements AircraftSnapshotIngestionSour
 
 export class ResolvedAircraftSnapshotSource implements AircraftSnapshotIngestionSource {
   private readonly mockSource: AircraftSnapshotIngestionSource
-  private readonly realSource: AircraftSnapshotIngestionSource
   private readonly repository: SnapshotRepository
 
   constructor(
     private readonly config: AnomalyRuntimeConfig = anomalyRuntimeConfig,
     dependencies: {
       mockSource?: AircraftSnapshotIngestionSource
-      realSource?: AircraftSnapshotIngestionSource
       repository?: SnapshotRepository
     } = {},
   ) {
     this.mockSource = dependencies.mockSource ?? new MockAircraftSnapshotSource()
-    this.realSource = dependencies.realSource ?? new HttpRealAircraftSnapshotSource(config)
     this.repository = dependencies.repository ?? createSnapshotRepository(config)
   }
 
@@ -76,93 +77,55 @@ export class ResolvedAircraftSnapshotSource implements AircraftSnapshotIngestion
       return this.mockSource.getSnapshots(query)
     }
 
-    if (this.config.validationErrors.length > 0) {
-      if (!this.config.allowMockFallback) {
-        throw new Error(this.config.validationErrors.join(' '))
-      }
+    const persistedSnapshots = await this.repository.loadSnapshots(query.scenarioId)
+    const persistedMetadata = await this.repository.loadIngestionMetadata(query.scenarioId)
+    const latestObservedAt = persistedSnapshots[persistedSnapshots.length - 1]?.observedAt
+    const hasEnoughHistory = persistedSnapshots.length >= 3
 
-      const fallback = await this.mockSource.getSnapshots(query)
+    if (persistedMetadata) {
       return {
-        ...fallback,
+        scenarioId: query.scenarioId,
+        snapshots: persistedSnapshots,
         ingestion: {
-          ...fallback.ingestion,
-          sourceKind: 'fallback',
-          sourceStatus: 'degraded',
-          degraded: true,
-          fallbackReason: this.config.validationErrors.join(' '),
-          notes: [...fallback.ingestion.notes, 'Real ingestion config validation failed.'],
+          ...persistedMetadata,
+          sourceKind: 'real',
+          providerObservedAt: latestObservedAt ?? persistedMetadata.providerObservedAt,
+          lastSuccessfulObservedAt:
+            latestObservedAt ?? persistedMetadata.lastSuccessfulObservedAt ?? persistedMetadata.lastSyncSucceededAt,
+          dataState: hasEnoughHistory ? 'ready' : 'insufficient',
+          sourceStatus:
+            persistedMetadata.syncStatus === 'failed' && !hasEnoughHistory
+              ? 'failed'
+              : persistedMetadata.freshness === 'stale' || !hasEnoughHistory
+                ? 'degraded'
+                : 'healthy',
+          degraded:
+            persistedMetadata.syncStatus === 'failed' || persistedMetadata.freshness === 'stale' || !hasEnoughHistory,
+          notes: hasEnoughHistory
+            ? persistedMetadata.notes
+            : [...persistedMetadata.notes, 'Persisted history is not yet sufficient for full scoring.'],
         },
       }
     }
 
-    try {
-      const liveResult = await this.realSource.getSnapshots(query)
-
-      if (liveResult.ingestion.freshness === 'stale' && this.config.allowMockFallback) {
-        const fallback = await this.mockSource.getSnapshots(query)
-        return {
-          ...fallback,
-          ingestion: {
-            ...fallback.ingestion,
-            sourceKind: 'fallback',
-            sourceStatus: 'degraded',
-            degraded: true,
-            providerObservedAt: liveResult.ingestion.providerObservedAt,
-            lastSuccessfulObservedAt: liveResult.ingestion.lastSuccessfulObservedAt,
-            fallbackReason: liveResult.ingestion.fallbackReason,
-            notes: [...fallback.ingestion.notes, 'Real provider data was stale, using mock fallback.'],
-          },
-        }
-      }
-
-      await this.repository.saveIngestionResult(liveResult)
-      const persistedSnapshots = await this.repository.loadSnapshots(query.scenarioId)
-      const persistedMetadata = await this.repository.loadIngestionMetadata(query.scenarioId)
-
-      if (persistedSnapshots.length >= 2 && persistedMetadata) {
-        return {
-          scenarioId: query.scenarioId,
-          snapshots: persistedSnapshots,
-          ingestion: persistedMetadata,
-        }
-      }
-
-      return liveResult
-    }
-    catch (error) {
-      const persistedSnapshots = await this.repository.loadSnapshots(query.scenarioId)
-      const persistedMetadata = await this.repository.loadIngestionMetadata(query.scenarioId)
-
-      if (persistedSnapshots.length >= 2 && persistedMetadata) {
-        return {
-          scenarioId: query.scenarioId,
-          snapshots: persistedSnapshots,
-          ingestion: {
-            ...persistedMetadata,
-            sourceStatus: 'degraded',
-            degraded: true,
-            fallbackReason: error instanceof Error ? error.message : 'Real ingestion failed.',
-            notes: [...persistedMetadata.notes, 'Loaded most recent persisted snapshots after live fetch failed.'],
-          },
-        }
-      }
-
-      if (this.config.allowMockFallback) {
-        const fallback = await this.mockSource.getSnapshots(query)
-        return {
-          ...fallback,
-          ingestion: {
-            ...fallback.ingestion,
-            sourceKind: 'fallback',
-            sourceStatus: 'degraded',
-            degraded: true,
-            fallbackReason: error instanceof Error ? error.message : 'Real ingestion failed.',
-            notes: [...fallback.ingestion.notes, 'Real provider failed, using mock fallback.'],
-          },
-        }
-      }
-
-      throw error
+    return {
+      scenarioId: query.scenarioId,
+      snapshots: [],
+      ingestion: {
+        requestedMode: this.config.ingestionMode,
+        sourceKind: 'real',
+        providerName: this.config.providerName,
+        sourceStatus: 'failed',
+        syncStatus: this.config.validationErrors.length > 0 ? 'failed' : 'idle',
+        dataState: 'insufficient',
+        freshness: 'stale',
+        degraded: true,
+        syncFailureReason:
+          this.config.validationErrors.length > 0
+            ? this.config.validationErrors.join(' ')
+            : 'Background sync has not produced persisted snapshots yet.',
+        notes: ['No persisted synchronized snapshots are available yet.'],
+      },
     }
   }
 }

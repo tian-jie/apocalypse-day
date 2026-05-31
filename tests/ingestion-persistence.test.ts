@@ -4,9 +4,11 @@ import { getAnomalyRuntimeConfig } from '../server/lib/anomaly/config'
 import { ResolvedAircraftSnapshotSource } from '../server/lib/anomaly/ingestion'
 import { NoopSnapshotRepository, PgSnapshotRepository } from '../server/lib/anomaly/repository'
 import { HttpRealAircraftSnapshotSource } from '../server/lib/anomaly/real-source'
+import { AnomalySyncService } from '../server/lib/anomaly/sync'
 import type {
   AircraftSnapshotIngestionSource,
   FixtureScenarioId,
+  IngestionMetadata,
   SnapshotIngestionQuery,
   SnapshotIngestionResult,
 } from '../server/lib/anomaly/types'
@@ -23,13 +25,25 @@ class StaticSource implements AircraftSnapshotIngestionSource {
   }
 }
 
-class ThrowingSource implements AircraftSnapshotIngestionSource {
-  listScenarioIds() {
-    return ['normal-day', 'holiday-spike', 'extreme-anomaly'] as FixtureScenarioId[]
+class InMemoryRepository extends NoopSnapshotRepository {
+  snapshots = new Map<FixtureScenarioId, SnapshotIngestionResult['snapshots']>()
+  metadata = new Map<FixtureScenarioId, IngestionMetadata>()
+
+  override async loadSnapshots(scenarioId: FixtureScenarioId) {
+    return this.snapshots.get(scenarioId) ?? []
   }
 
-  async getSnapshots() {
-    throw new Error('provider offline')
+  override async loadIngestionMetadata(scenarioId: FixtureScenarioId) {
+    return this.metadata.get(scenarioId) ?? null
+  }
+
+  override async saveIngestionResult(result: SnapshotIngestionResult) {
+    this.snapshots.set(result.scenarioId, result.snapshots)
+    this.metadata.set(result.scenarioId, result.ingestion)
+  }
+
+  override async saveIngestionMetadata(scenarioId: FixtureScenarioId, metadata: IngestionMetadata) {
+    this.metadata.set(scenarioId, metadata)
   }
 }
 
@@ -89,16 +103,114 @@ describe('real ingestion and persistence', () => {
     expect(result.snapshots[0]?.keyCityDepartures.london).toBe(3)
     expect(result.snapshots[1]?.contextMarkers).toContain('conference')
     expect(result.ingestion.sourceKind).toBe('real')
+    expect(result.ingestion.syncStatus).toBe('healthy')
   })
 
-  it('falls back to mock-like source when real ingestion fails and fallback is enabled', async () => {
-    const fallbackResult: SnapshotIngestionResult = {
+  it('reads persisted real snapshots instead of fetching provider data on query path', async () => {
+    const repository = new InMemoryRepository()
+    repository.snapshots.set('normal-day', [
+      {
+        id: 'persisted-1',
+        scenarioId: 'normal-day',
+        observedAt: '2026-05-31T09:00:00.000Z',
+        takeoffs: 100,
+        landings: 99,
+        activeAircraft: 300,
+        keyCityDepartures: { london: 12 },
+        destinationConcentration: 0.3,
+        crossBorderRatio: 0.22,
+        missingIdentificationRatio: 0.03,
+        contextMarkers: [],
+      },
+      {
+        id: 'persisted-2',
+        scenarioId: 'normal-day',
+        observedAt: '2026-05-31T10:00:00.000Z',
+        takeoffs: 102,
+        landings: 101,
+        activeAircraft: 302,
+        keyCityDepartures: { london: 13 },
+        destinationConcentration: 0.31,
+        crossBorderRatio: 0.23,
+        missingIdentificationRatio: 0.03,
+        contextMarkers: [],
+      },
+      {
+        id: 'persisted-3',
+        scenarioId: 'normal-day',
+        observedAt: '2026-05-31T11:00:00.000Z',
+        takeoffs: 104,
+        landings: 103,
+        activeAircraft: 305,
+        keyCityDepartures: { london: 13 },
+        destinationConcentration: 0.31,
+        crossBorderRatio: 0.23,
+        missingIdentificationRatio: 0.03,
+        contextMarkers: [],
+      },
+    ])
+    repository.metadata.set('normal-day', {
+      requestedMode: 'real',
+      sourceKind: 'real',
+      providerName: 'http-json',
+      sourceStatus: 'healthy',
+      syncStatus: 'healthy',
+      dataState: 'ready',
+      freshness: 'fresh',
+      degraded: false,
+      providerObservedAt: '2026-05-31T11:00:00.000Z',
+      lastSuccessfulObservedAt: '2026-05-31T11:00:00.000Z',
+      lastSyncSucceededAt: '2026-05-31T11:05:00.000Z',
+      notes: [],
+    })
+
+    const source = new ResolvedAircraftSnapshotSource(
+      getAnomalyRuntimeConfig({
+        ANOMALY_INGESTION_MODE: 'real',
+        ANOMALY_REAL_SOURCE_URL: 'https://example.test/feed',
+        ANOMALY_PG_URL: 'postgres://postgres:postgres@localhost:5432/aether',
+      }),
+      {
+        repository,
+      },
+    )
+
+    const result = await source.getSnapshots({ scenarioId: 'normal-day' })
+
+    expect(result.snapshots).toHaveLength(3)
+    expect(result.ingestion.sourceKind).toBe('real')
+    expect(result.ingestion.syncStatus).toBe('healthy')
+  })
+
+  it('stores sync failure status when background sync fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+
+    const repository = new InMemoryRepository()
+    const service = new AnomalySyncService(
+      getAnomalyRuntimeConfig({
+        ANOMALY_INGESTION_MODE: 'real',
+        ANOMALY_REAL_SOURCE_URL: 'https://example.test/feed',
+        ANOMALY_PG_URL: 'postgres://postgres:postgres@localhost:5432/aether',
+      }),
+      {
+        repository,
+      },
+    )
+
+    await expect(service.syncScenario('normal-day')).rejects.toThrow('503')
+    expect(repository.metadata.get('normal-day')?.syncStatus).toBe('failed')
+    expect(repository.metadata.get('normal-day')?.syncFailureReason).toContain('503')
+  })
+
+  it('writes successful sync metadata and tolerates repeated execution', async () => {
+    const repository = new InMemoryRepository()
+    const liveResult: SnapshotIngestionResult = {
       scenarioId: 'normal-day',
       snapshots: [
         {
-          id: 'fallback-1',
+          id: 'sync-1',
           scenarioId: 'normal-day',
-          observedAt: '2026-05-31T10:00:00.000Z',
+          observedAt: '2026-05-31T09:00:00.000Z',
           takeoffs: 100,
           landings: 99,
           activeAircraft: 300,
@@ -109,7 +221,20 @@ describe('real ingestion and persistence', () => {
           contextMarkers: [],
         },
         {
-          id: 'fallback-2',
+          id: 'sync-2',
+          scenarioId: 'normal-day',
+          observedAt: '2026-05-31T10:00:00.000Z',
+          takeoffs: 102,
+          landings: 101,
+          activeAircraft: 302,
+          keyCityDepartures: { london: 13 },
+          destinationConcentration: 0.31,
+          crossBorderRatio: 0.23,
+          missingIdentificationRatio: 0.03,
+          contextMarkers: [],
+        },
+        {
+          id: 'sync-3',
           scenarioId: 'normal-day',
           observedAt: '2026-05-31T11:00:00.000Z',
           takeoffs: 104,
@@ -123,37 +248,42 @@ describe('real ingestion and persistence', () => {
         },
       ],
       ingestion: {
-        requestedMode: 'real-with-fallback',
-        sourceKind: 'mock',
-        providerName: 'fixtures',
+        requestedMode: 'real',
+        sourceKind: 'real',
+        providerName: 'http-json',
         sourceStatus: 'healthy',
+        syncStatus: 'healthy',
+        dataState: 'ready',
         freshness: 'fresh',
         degraded: false,
         providerObservedAt: '2026-05-31T11:00:00.000Z',
         lastSuccessfulObservedAt: '2026-05-31T11:00:00.000Z',
+        lastSyncAttemptedAt: '2026-05-31T11:05:00.000Z',
+        lastSyncSucceededAt: '2026-05-31T11:05:00.000Z',
+        persistedAt: '2026-05-31T11:05:00.000Z',
         notes: [],
       },
     }
 
-    const source = new ResolvedAircraftSnapshotSource(
+    const service = new AnomalySyncService(
       getAnomalyRuntimeConfig({
-        ANOMALY_INGESTION_MODE: 'real-with-fallback',
-        ANOMALY_ALLOW_MOCK_FALLBACK: 'true',
+        ANOMALY_INGESTION_MODE: 'real',
         ANOMALY_REAL_SOURCE_URL: 'https://example.test/feed',
         ANOMALY_PG_URL: 'postgres://postgres:postgres@localhost:5432/aether',
       }),
       {
-        mockSource: new StaticSource(fallbackResult),
-        realSource: new ThrowingSource(),
-        repository: new NoopSnapshotRepository(),
+        repository,
+        realSource: new StaticSource(liveResult) as HttpRealAircraftSnapshotSource,
       },
     )
 
-    const result = await source.getSnapshots({ scenarioId: 'normal-day' })
+    const first = await service.syncScenario('normal-day')
+    const second = await service.syncScenario('normal-day')
 
-    expect(result.ingestion.sourceKind).toBe('fallback')
-    expect(result.ingestion.degraded).toBe(true)
-    expect(result.ingestion.fallbackReason).toContain('provider offline')
+    expect(first.ingestion.syncStatus).toBe('healthy')
+    expect(second.ingestion.syncStatus).toBe('healthy')
+    expect(repository.snapshots.get('normal-day')).toHaveLength(3)
+    expect(repository.metadata.get('normal-day')?.lastSyncSucceededAt).toBeDefined()
   })
 
   it('persists snapshots and ingestion metadata through the pg repository contract', async () => {
@@ -208,6 +338,8 @@ describe('real ingestion and persistence', () => {
         sourceKind: 'real',
         providerName: 'http-json',
         sourceStatus: 'healthy',
+        syncStatus: 'healthy',
+        dataState: 'ready',
         freshness: 'fresh',
         degraded: false,
         notes: [],

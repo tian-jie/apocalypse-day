@@ -72,5 +72,6 @@ describe('AnomalyDashboard', () => {
     expect(wrapper.text()).toContain('This system measures anomaly signals')
     expect(wrapper.text()).toContain('Ingestion Status')
     expect(wrapper.text()).toContain('Mock')
+    expect(wrapper.text()).toContain('Ready')
   })
 })

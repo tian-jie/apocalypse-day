@@ -10,12 +10,17 @@ export interface SummaryResponse {
     sourceKind: 'mock' | 'real' | 'fallback'
     providerName: string
     sourceStatus: 'healthy' | 'degraded' | 'failed'
+    syncStatus: 'idle' | 'running' | 'healthy' | 'failed'
+    dataState: 'ready' | 'insufficient'
     freshness: 'fresh' | 'stale'
     degraded: boolean
     providerObservedAt?: string
     lastSuccessfulObservedAt?: string
+    lastSyncAttemptedAt?: string
+    lastSyncSucceededAt?: string
+    lastSyncFailedAt?: string
     persistedAt?: string
-    fallbackReason?: string
+    syncFailureReason?: string
     notes: string[]
   }
   currentLevel: number

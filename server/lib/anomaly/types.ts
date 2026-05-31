@@ -15,6 +15,10 @@ export type IngestionFreshness = 'fresh' | 'stale'
 
 export type IngestionSourceStatus = 'healthy' | 'degraded' | 'failed'
 
+export type SyncStatus = 'idle' | 'running' | 'healthy' | 'failed'
+
+export type DataState = 'ready' | 'insufficient'
+
 export type MetricKey =
   | 'takeoffs'
   | 'landings'
@@ -43,12 +47,17 @@ export interface IngestionMetadata {
   sourceKind: IngestionSourceKind
   providerName: string
   sourceStatus: IngestionSourceStatus
+  syncStatus: SyncStatus
+  dataState: DataState
   freshness: IngestionFreshness
   degraded: boolean
   providerObservedAt?: string
   lastSuccessfulObservedAt?: string
+  lastSyncAttemptedAt?: string
+  lastSyncSucceededAt?: string
+  lastSyncFailedAt?: string
   persistedAt?: string
-  fallbackReason?: string
+  syncFailureReason?: string
   notes: string[]
 }
 

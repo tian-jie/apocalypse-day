@@ -30,16 +30,18 @@ npm run test
 
 ## 真实数据与 PostgreSQL 配置
 
-默认模式仍为 mock；未配置环境变量时，系统继续使用内置 fixture。
+默认模式仍为 mock；未配置环境变量时，系统继续使用内置 fixture。真实模式下建议使用“后台同步到 PostgreSQL，本地查询链路只读 PG”的方式，而不是在 dashboard 请求时现场拉取 provider。
 
 可选环境变量：
 
 - `ANOMALY_INGESTION_MODE`：`mock`、`real`、`real-with-fallback`
-- `ANOMALY_PG_URL` 或 `DATABASE_URL`：PostgreSQL 连接串
+- `ANOMALY_PG_URL` 或 `DATABASE_URL`：PostgreSQL 连接串，优先使用 `ANOMALY_PG_URL`
 - `ANOMALY_REAL_SOURCE_URL`：真实数据 provider 地址
 - `ANOMALY_REAL_SOURCE_TOKEN`：真实数据 provider Bearer Token
 - `ANOMALY_REAL_SOURCE_TIMEOUT_MS`：请求超时，默认 `5000`
 - `ANOMALY_REAL_SOURCE_FRESHNESS_MINUTES`：数据新鲜度阈值，默认 `90`
+- `ANOMALY_AUTO_SYNC_ENABLED`：是否在服务启动后自动进行后台同步
+- `ANOMALY_SYNC_INTERVAL_MS`：后台同步周期，默认 `300000`
 - `ANOMALY_ALLOW_MOCK_FALLBACK`：是否允许在真实源失败时回退到 mock
 
 示例：
@@ -49,9 +51,43 @@ export ANOMALY_INGESTION_MODE=real-with-fallback
 export ANOMALY_PG_URL=postgres://postgres:postgres@localhost:5432/aether_watch
 export ANOMALY_REAL_SOURCE_URL=https://example.com/aircraft/hourly
 export ANOMALY_REAL_SOURCE_TOKEN=replace-me
+export ANOMALY_AUTO_SYNC_ENABLED=true
+export ANOMALY_SYNC_INTERVAL_MS=300000
 ```
 
+本地最小联调步骤：
+
+```bash
+export ANOMALY_INGESTION_MODE=real
+export ANOMALY_PG_URL=postgres://postgres:postgres@localhost:5432/aether_watch
+export ANOMALY_REAL_SOURCE_URL=https://example.com/aircraft/hourly
+npm run dev
+```
+
+真实模式下如果没有 `ANOMALY_PG_URL` / `DATABASE_URL`，服务端状态会把数据库标记为未就绪，而不会再静默退回无持久化实现。
+
+确认当前实际连接目标与数据库就绪状态：
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+返回结果里的 `database` 字段会显示：
+
+- `status`：`mock-mode`、`not-configured`、`ready`、`unreachable`
+- `source`：当前连接串来自 `ANOMALY_PG_URL` 还是 `DATABASE_URL`
+- `host` / `port` / `databaseName`：安全摘要后的目标信息
+- `failureReason`：未配置或连接失败时的排障信息
+
+可手动触发一次后台同步：`POST /api/signals/sync`
+
 如需快速回滚到纯 mock 模式，只需将 `ANOMALY_INGESTION_MODE` 设回 `mock`，无需清理 PostgreSQL 中已写入的数据。
+
+常见排查：
+
+- `/api/health` 中 `database.status = not-configured`：未设置 `ANOMALY_PG_URL` 或 `DATABASE_URL`
+- `/api/health` 中 `database.status = unreachable`：连接串存在，但 PostgreSQL 未启动、主机/端口错误，或凭证不可用
+- 需要确认当前到底连了哪个库：优先看 `/api/health` 返回的 `source` 和 `databaseName`
 
 ## 当前 MVP 能力
 

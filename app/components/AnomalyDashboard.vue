@@ -129,12 +129,17 @@ const scoreCopy = computed(() => {
           <ul class="detail-list">
             <li>{{ copy.sourceKind }}: {{ copy.sourceKindLabels[summary.ingestion.sourceKind] }}</li>
             <li>{{ copy.sourceStatus }}: {{ copy.sourceStatusLabels[summary.ingestion.sourceStatus] }}</li>
+            <li>{{ copy.syncStatus }}: {{ copy.syncStatusLabels[summary.ingestion.syncStatus] }}</li>
+            <li>{{ copy.dataState }}: {{ copy.dataStateLabels[summary.ingestion.dataState] }}</li>
             <li>{{ copy.freshness }}: {{ copy.freshnessLabels[summary.ingestion.freshness] }}</li>
             <li v-if="summary.ingestion.providerObservedAt">
               {{ copy.providerTime }}: {{ summary.ingestion.providerObservedAt }}
             </li>
-            <li v-if="summary.ingestion.fallbackReason">
-              {{ copy.fallbackReason }}: {{ summary.ingestion.fallbackReason }}
+            <li v-if="summary.ingestion.lastSyncSucceededAt">
+              {{ copy.lastSyncTime }}: {{ summary.ingestion.lastSyncSucceededAt }}
+            </li>
+            <li v-if="summary.ingestion.syncFailureReason">
+              {{ copy.syncFailureReason }}: {{ summary.ingestion.syncFailureReason }}
             </li>
           </ul>
         </article>

@@ -51,15 +51,15 @@
 - **THEN** 它无需重新计算分数即可获得当前等级的人类可读解释
 
 ### Requirement: Dashboard status output
-系统 SHALL 暴露可供 dashboard 直接使用的状态数据，包括当前等级、上一等级、趋势、最新快照指标、预测复盘、主要异常驱动因素与解释；系统同时 SHALL 暴露当前摄取来源、最新成功数据时间、数据新鲜度以及是否处于降级/回退状态，使客户端能够明确识别当前状态是否基于真实数据。
+系统 SHALL 暴露可供 dashboard 直接使用的状态数据，包括当前等级、上一等级、趋势、最新快照指标、预测复盘、主要异常驱动因素与解释；系统同时 SHALL 暴露当前数据的新鲜度、最近一次成功同步时间、同步健康度以及同步失败原因，使客户端能够明确识别当前状态是否来自本地已同步数据。
 
-#### Scenario: Current status is displayed
-- **WHEN** 用户打开异常 dashboard 时
-- **THEN** dashboard 可以通过单个状态载荷展示当前全局异常状态、近期变化、支撑证据以及当前摄取状态
+#### Scenario: Current status is displayed from synchronized data
+- **WHEN** 用户打开异常 dashboard 且 PostgreSQL 中存在最近一次成功同步的小时级快照时
+- **THEN** dashboard 通过单个状态载荷展示当前全局异常状态、近期变化、支撑证据以及同步状态，而无需在请求时直接访问外部 provider
 
-#### Scenario: Dashboard shows degraded ingestion
-- **WHEN** 最新一次评估使用了回退数据或检测到真实数据已过新鲜度阈值时
-- **THEN** 状态载荷包含明确的降级标记、原因与时间信息，且客户端无需解析自然语言说明即可识别该状态
+#### Scenario: Dashboard shows stale synchronized data
+- **WHEN** PostgreSQL 中最近一次成功同步的快照已超过新鲜度阈值时
+- **THEN** 状态载荷包含明确的 stale/degraded 标记、最近成功同步时间与失败原因（如有）
 
 ### Requirement: Localized dashboard copy
 系统 SHALL 支持至少中文和英文两种 locale，并能够按用户选择输出对应语言的 dashboard 文案、解释文本与场景说明。
@@ -73,23 +73,68 @@
 - **THEN** 接口返回的 headline、summary、drivers、window 与 benign context 应使用对应语言
 
 ### Requirement: Configurable ingestion source
-系统 SHALL 支持通过运行时配置选择默认摄取模式，至少包括 `mock` 与 `real` 两种模式，并在启用真实模式时初始化对应的真实数据适配器，而不要求评分逻辑感知 provider 差异。
+系统 SHALL 支持通过运行时配置选择默认摄取模式，至少包括 `mock` 与 `real` 两种模式；在启用真实模式时，系统 MUST 通过后台同步流程更新 PostgreSQL 中的规范化快照，而不要求 dashboard 查询链路在请求时直接访问真实 provider。系统同时 MUST 明确 PostgreSQL 连接配置来源与优先级，并在真实模式下将数据库连接视为必需运行依赖。
 
 #### Scenario: Service starts in real mode
-- **WHEN** 部署环境将默认摄取模式设置为 `real`
-- **THEN** 系统初始化真实数据适配器并将其作为默认快照来源
+- **WHEN** 部署环境将默认摄取模式设置为 `real` 且提供了 `ANOMALY_PG_URL` 或 `DATABASE_URL`
+- **THEN** 系统解析 PostgreSQL 连接配置，并将其作为真实模式的持久化存储目标
+
+#### Scenario: Real mode starts without database configuration
+- **WHEN** 部署环境将默认摄取模式设置为 `real` 但未提供 `ANOMALY_PG_URL` 和 `DATABASE_URL`
+- **THEN** 系统返回明确的配置校验错误，并将真实模式标记为未就绪，而不是静默退回无持久化实现
 
 #### Scenario: Service starts in mock mode
 - **WHEN** 部署环境未提供真实数据配置或显式将模式设置为 `mock`
 - **THEN** 系统继续使用现有 mock 摄取源，保持本地开发与测试行为稳定
 
+### Requirement: Background real-data synchronization
+系统 SHALL 提供后台同步流程，以固定周期从真实 provider 拉取飞行数据、归一化为小时级快照并写入 PostgreSQL；同步流程 MUST 记录最近一次尝试时间、最近一次成功时间以及最近失败原因。
+
+#### Scenario: Scheduled sync writes normalized snapshots
+- **WHEN** 后台同步任务按计划执行且真实 provider 返回有效数据时
+- **THEN** 系统将规范化后的小时级快照与同步状态写入 PostgreSQL，供后续查询链路直接读取
+
+#### Scenario: Sync failure updates sync status
+- **WHEN** 后台同步任务请求真实 provider 失败、超时或返回不可归一化的数据时
+- **THEN** 系统更新同步失败状态与原因，并保留最近一次成功同步的数据供查询链路继续使用
+
+#### Scenario: Sync detects unreachable database
+- **WHEN** 真实模式已启用、数据库配置存在，但 PostgreSQL 连接失败或不可达
+- **THEN** 系统返回明确的数据库不可达状态与失败原因，并阻止把同步链路误报为正常
+
+### Requirement: Database connection observability
+系统 SHALL 为真实模式暴露结构化数据库连接状态，使开发与运维可以确认当前数据库依赖是否已配置、是否可达以及失败发生在哪个阶段；该状态输出 MUST 避免暴露完整连接串等敏感信息。
+
+#### Scenario: Health endpoint shows database readiness
+- **WHEN** 服务运行在真实模式且数据库连接检查成功
+- **THEN** 健康检查或等价的服务端状态接口返回数据库已配置、可达和安全摘要后的目标信息
+
+#### Scenario: Health endpoint shows database failure
+- **WHEN** 服务运行在真实模式且数据库未配置或连接检查失败
+- **THEN** 健康检查或等价的服务端状态接口返回明确的数据库未就绪状态和可排障的失败原因
+
+#### Scenario: Mock mode does not require database readiness
+- **WHEN** 服务运行在 `mock` 模式
+- **THEN** 系统不将 PostgreSQL 连接状态作为 mock 模式可用性的前置条件
+
+### Requirement: Query path reads persisted snapshots
+系统 SHALL 在真实模式下优先从 PostgreSQL 中读取最近一次成功同步的规范化快照，以驱动基线、预测、评分与 dashboard 状态，而不是在读请求期间直接拉取外部 provider。
+
+#### Scenario: Read path uses PostgreSQL snapshots
+- **WHEN** dashboard 或 API 请求当前异常状态且 PostgreSQL 中已有足够的规范化历史快照
+- **THEN** 系统仅使用本地持久化快照完成评估与响应
+
+#### Scenario: Persisted history is insufficient
+- **WHEN** PostgreSQL 中没有足够的规范化历史快照来完成评估
+- **THEN** 系统返回明确的数据不足或同步未完成状态，而不是在该请求中直接访问真实 provider
+
 ### Requirement: Graceful fallback for real-data ingestion
 系统 SHALL 在真实数据获取失败、响应超时、字段无法归一化或最新数据超过新鲜度阈值时，生成明确的摄取失败或降级状态；若部署启用了回退策略，系统 MUST 回退到受控的备用数据源，并在输出中显式标记该回退。
 
 #### Scenario: Real source request fails with fallback enabled
-- **WHEN** 真实数据适配器请求失败且运行时配置允许回退
+- **WHEN** 后台同步任务请求真实 provider 失败且运行时配置允许回退
 - **THEN** 系统返回回退后的状态结果，并显式标记当前数据并非来自真实源
 
 #### Scenario: Real source data is stale without fallback
-- **WHEN** 最新一次成功获取的真实快照早于配置的新鲜度阈值且未启用回退
+- **WHEN** 最近一次成功同步的真实快照早于配置的新鲜度阈值且未启用回退
 - **THEN** 系统返回明确的 stale/degraded 摄取状态，供 API 和 dashboard 向用户展示
