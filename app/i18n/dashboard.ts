@@ -1,0 +1,110 @@
+import type { Locale, ScenarioId, ScenarioOption } from '../types/dashboard'
+
+export const localeOptions: Array<{ id: Locale; label: string }> = [
+  { id: 'zh-CN', label: '中文' },
+  { id: 'en', label: 'English' },
+]
+
+const scenarioCopy: Record<Locale, Record<ScenarioId, ScenarioOption>> = {
+  'zh-CN': {
+    'normal-day': { id: 'normal-day', label: '常态日', note: '低偏差基准样例' },
+    'holiday-spike': { id: 'holiday-spike', label: '节假日尖峰', note: '带正常背景因素的中等异常' },
+    'extreme-anomaly': { id: 'extreme-anomaly', label: '极端同步异常', note: '高偏差高集中度场景' },
+  },
+  en: {
+    'normal-day': { id: 'normal-day', label: 'Routine day', note: 'Low-deviation baseline fixture' },
+    'holiday-spike': { id: 'holiday-spike', label: 'Holiday spike', note: 'Moderated anomaly with benign context' },
+    'extreme-anomaly': { id: 'extreme-anomaly', label: 'Extreme anomaly', note: 'High-deviation synchronized scenario' },
+  },
+}
+
+const uiCopy = {
+  'zh-CN': {
+    loading: '正在刷新当前场景数据…',
+    heroTitle: 'Tracking black swan signals in the sky.',
+    heroLead: '以小时级航空活动快照为基础，结合历史基线、预测复盘与透明评分，将异常信号转换为可读的全局预警状态。',
+    currentSignal: 'Current Signal',
+    statusLow: '接近常态波动',
+    statusMedium: '需要人工关注',
+    statusHigh: '高风险同步偏差',
+    anomalyNarrative: 'Anomaly Narrative',
+    trend: '趋势',
+    previousLevel: '上一等级',
+    forecastVsActual: 'Forecast vs Actual',
+    forecastTakeoffs: '预测起飞',
+    actualTakeoffs: '实际起飞',
+    deviation: '偏差',
+    predictionTarget: '预测目标时间',
+    latestSnapshot: 'Latest Snapshot',
+    takeoffs: '起飞数',
+    landings: '降落数',
+    activeAircraft: '活跃航空器',
+    destinationConcentration: '目的地集中度',
+    crossBorderRatio: '跨境比例',
+    missingIdentificationRatio: '身份缺失比例',
+    topDrivers: 'Top Drivers',
+    keyCityDepartures: 'Key City Departures',
+    benignContext: 'Benign Context',
+    noBenignContext: '当前没有额外的正常背景标记。',
+    baselineWindow: 'Baseline Window',
+    sampleSize: '样本数',
+    takeoffRange: '起飞范围',
+    predictionRationale: 'Prediction Rationale',
+    guardrail: 'Interpretation Guardrail',
+    guardrailCopy: '该系统衡量的是异常信号与偏差程度，不直接宣称灾难、冲突或其他确定性因果关系。',
+    trendLabels: { rising: '上升', stable: '稳定', cooling: '回落' },
+    localeLabel: '语言',
+    levelLabel: 'Level',
+    cityCount: (city: string, count: number) => `${city}：${count}`,
+    driverDetail: (label: string, deltaRatio: number, contribution: number) =>
+      `${label}：偏差比 ${deltaRatio.toFixed(2)}，贡献 ${contribution.toFixed(2)}`,
+  },
+  en: {
+    loading: 'Refreshing scenario data…',
+    heroTitle: 'Tracking black swan signals in the sky.',
+    heroLead: 'Use hourly aircraft snapshots, historical baselines, forecast review, and transparent scoring to turn anomaly signals into a readable global warning state.',
+    currentSignal: 'Current Signal',
+    statusLow: 'Close to routine variation',
+    statusMedium: 'Needs analyst attention',
+    statusHigh: 'High-risk synchronized deviation',
+    anomalyNarrative: 'Anomaly Narrative',
+    trend: 'Trend',
+    previousLevel: 'Previous level',
+    forecastVsActual: 'Forecast vs Actual',
+    forecastTakeoffs: 'Forecast takeoffs',
+    actualTakeoffs: 'Actual takeoffs',
+    deviation: 'Deviation',
+    predictionTarget: 'Prediction target',
+    latestSnapshot: 'Latest Snapshot',
+    takeoffs: 'Takeoffs',
+    landings: 'Landings',
+    activeAircraft: 'Active aircraft',
+    destinationConcentration: 'Destination concentration',
+    crossBorderRatio: 'Cross-border ratio',
+    missingIdentificationRatio: 'Missing-identification ratio',
+    topDrivers: 'Top Drivers',
+    keyCityDepartures: 'Key City Departures',
+    benignContext: 'Benign Context',
+    noBenignContext: 'No additional benign context markers are active.',
+    baselineWindow: 'Baseline Window',
+    sampleSize: 'Sample size',
+    takeoffRange: 'Takeoff range',
+    predictionRationale: 'Prediction Rationale',
+    guardrail: 'Interpretation Guardrail',
+    guardrailCopy: 'This system measures anomaly signals and deviation intensity; it does not directly claim a disaster, conflict, or other deterministic causality.',
+    trendLabels: { rising: 'Rising', stable: 'Stable', cooling: 'Cooling' },
+    localeLabel: 'Language',
+    levelLabel: 'Level',
+    cityCount: (city: string, count: number) => `${city}: ${count}`,
+    driverDetail: (label: string, deltaRatio: number, contribution: number) =>
+      `${label}: deviation ${deltaRatio.toFixed(2)}, contribution ${contribution.toFixed(2)}`,
+  },
+} as const
+
+export function getScenarioOptions(locale: Locale): ScenarioOption[] {
+  return Object.values(scenarioCopy[locale])
+}
+
+export function getDashboardCopy(locale: Locale) {
+  return uiCopy[locale]
+}

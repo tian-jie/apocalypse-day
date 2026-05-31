@@ -1,0 +1,46 @@
+schema: spec-driven
+
+context: |
+  OpenSpec design memory:
+  - Archived long-term change references live under openspec/changes/archive/YYYY-MM-DD-<change-name>/.
+  - Each archived change directory should contain only proposal.md and design-spec.md.
+  - Main capability directories under openspec/specs/<capability>/ may also contain design.md as the current design reference for that capability.
+  - Before creating a new design.md, review relevant archived design-spec.md files, existing main design.md files, and existing specs, then evolve compatible prior decisions instead of inventing a disconnected architecture.
+  - When archiving a change, merge design.md and specs/**/*.md into design-spec.md in the archive directory; do not archive tasks.md.
+  OpenSpec language conventions:
+  - proposal.md, design.md, tasks.md, specs/**/*.md 的正文内容默认使用中文。
+  - 若 schema 或 template 自带英文标题、章节名、复选框前缀或固定字段名，可保留原样，不强制翻译模板标题。
+  - 技术术语、协议名、API 名称、代码标识符可保留英文，但解释与描述应以中文为主。
+
+rules:
+  proposal:
+    - 正文内容默认使用中文；如模板标题为英文，可保留标题原样。
+    - 优先用中文解释动机、范围、影响与能力定义。
+  design:
+    - 正文内容默认使用中文；如模板标题为英文，可保留标题原样。
+    - 技术决策、取舍、风险、迁移方案与开放问题使用中文描述。
+  specs:
+    - 需求描述、场景说明默认使用中文；如模板标题、Requirement/Scenario 关键字为英文，可保留原样。
+    - REQUIREMENT 名称可中英混合，但规范性描述与 WHEN/THEN 说明以中文为主。
+  tasks:
+    - 任务描述默认使用中文；如模板中的编号和 checkbox 格式为英文样式，保留原样。
+    - 每条任务应使用中文描述可验证的实现动作。
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
