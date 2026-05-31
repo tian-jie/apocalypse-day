@@ -32,5 +32,7 @@ describe('anomaly engine scenarios', () => {
     expect(summary.locale).toBe('en')
     expect(summary.window).toBe('Last completed hour')
     expect(summary.drivers[0]).toContain('weight')
+    expect(summary.ingestion.sourceKind).toBe('mock')
+    expect(summary.ingestion.freshness).toBe('fresh')
   })
 })

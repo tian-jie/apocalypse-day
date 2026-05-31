@@ -4,6 +4,7 @@ import type { DashboardStatus } from './types'
 export interface SignalSummaryResponse {
   locale: Locale
   scenarioId: DashboardStatus['scenarioId']
+  ingestion: DashboardStatus['ingestion']
   currentLevel: number
   previousLevel: number
   trend: DashboardStatus['trend']
@@ -31,6 +32,7 @@ export function toSignalSummaryResponse(status: DashboardStatus, locale: Locale)
   return {
     locale,
     scenarioId: status.scenarioId,
+    ingestion: status.ingestion,
     currentLevel: status.currentLevel,
     previousLevel: status.previousLevel,
     trend: status.trend,

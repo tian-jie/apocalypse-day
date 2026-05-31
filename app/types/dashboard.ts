@@ -5,6 +5,19 @@ export type ScenarioId = 'normal-day' | 'holiday-spike' | 'extreme-anomaly'
 export interface SummaryResponse {
   locale: Locale
   scenarioId: ScenarioId
+  ingestion: {
+    requestedMode: 'mock' | 'real' | 'real-with-fallback'
+    sourceKind: 'mock' | 'real' | 'fallback'
+    providerName: string
+    sourceStatus: 'healthy' | 'degraded' | 'failed'
+    freshness: 'fresh' | 'stale'
+    degraded: boolean
+    providerObservedAt?: string
+    lastSuccessfulObservedAt?: string
+    persistedAt?: string
+    fallbackReason?: string
+    notes: string[]
+  }
   currentLevel: number
   previousLevel: number
   trend: 'rising' | 'stable' | 'cooling'

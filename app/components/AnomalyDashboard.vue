@@ -123,6 +123,21 @@ const scoreCopy = computed(() => {
           </div>
           <small>{{ copy.predictionTarget }}：{{ summary.prediction.targetObservedAt }}</small>
         </article>
+
+        <article class="panel">
+          <p class="panel-label">{{ copy.ingestionStatus }}</p>
+          <ul class="detail-list">
+            <li>{{ copy.sourceKind }}: {{ copy.sourceKindLabels[summary.ingestion.sourceKind] }}</li>
+            <li>{{ copy.sourceStatus }}: {{ copy.sourceStatusLabels[summary.ingestion.sourceStatus] }}</li>
+            <li>{{ copy.freshness }}: {{ copy.freshnessLabels[summary.ingestion.freshness] }}</li>
+            <li v-if="summary.ingestion.providerObservedAt">
+              {{ copy.providerTime }}: {{ summary.ingestion.providerObservedAt }}
+            </li>
+            <li v-if="summary.ingestion.fallbackReason">
+              {{ copy.fallbackReason }}: {{ summary.ingestion.fallbackReason }}
+            </li>
+          </ul>
+        </article>
       </section>
 
       <section class="detail-grid">

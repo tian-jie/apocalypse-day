@@ -15,7 +15,8 @@ export async function buildDashboardStatus(
   scenarioId: FixtureScenarioId = 'normal-day',
   locale: Locale = defaultLocale,
 ): Promise<DashboardStatus> {
-  const snapshots = (await defaultIngestionSource.listSnapshots(scenarioId)).sort(sortByObservedAt)
+  const ingestionResult = await defaultIngestionSource.getSnapshots({ scenarioId })
+  const snapshots = ingestionResult.snapshots.sort(sortByObservedAt)
   const latestSnapshot = snapshots[snapshots.length - 1]
   const previousSnapshot = snapshots[snapshots.length - 2]
   const historyBeforeLatest = snapshots.slice(0, -1)
@@ -43,6 +44,7 @@ export async function buildDashboardStatus(
   const statusBase = {
     scenarioId,
     locale,
+    ingestion: ingestionResult.ingestion,
     currentLevel: score.level,
     previousLevel: score.previousLevel,
     trend: score.trend,

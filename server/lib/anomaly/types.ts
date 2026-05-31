@@ -7,6 +7,14 @@ export type ContextMarker =
 
 export type FixtureScenarioId = 'normal-day' | 'holiday-spike' | 'extreme-anomaly'
 
+export type IngestionMode = 'mock' | 'real' | 'real-with-fallback'
+
+export type IngestionSourceKind = 'mock' | 'real' | 'fallback'
+
+export type IngestionFreshness = 'fresh' | 'stale'
+
+export type IngestionSourceStatus = 'healthy' | 'degraded' | 'failed'
+
 export type MetricKey =
   | 'takeoffs'
   | 'landings'
@@ -28,6 +36,30 @@ export interface HourlyAircraftSnapshot {
   crossBorderRatio: number
   missingIdentificationRatio: number
   contextMarkers: ContextMarker[]
+}
+
+export interface IngestionMetadata {
+  requestedMode: IngestionMode
+  sourceKind: IngestionSourceKind
+  providerName: string
+  sourceStatus: IngestionSourceStatus
+  freshness: IngestionFreshness
+  degraded: boolean
+  providerObservedAt?: string
+  lastSuccessfulObservedAt?: string
+  persistedAt?: string
+  fallbackReason?: string
+  notes: string[]
+}
+
+export interface SnapshotIngestionQuery {
+  scenarioId: FixtureScenarioId
+}
+
+export interface SnapshotIngestionResult {
+  scenarioId: FixtureScenarioId
+  snapshots: HourlyAircraftSnapshot[]
+  ingestion: IngestionMetadata
 }
 
 export interface MetricRange {
@@ -93,6 +125,7 @@ export interface AnomalyExplanation {
 export interface DashboardStatus {
   scenarioId: FixtureScenarioId
   locale: 'zh-CN' | 'en'
+  ingestion: IngestionMetadata
   currentLevel: number
   previousLevel: number
   trend: 'rising' | 'stable' | 'cooling'
@@ -106,6 +139,6 @@ export interface DashboardStatus {
 }
 
 export interface AircraftSnapshotIngestionSource {
-  listSnapshots: (scenarioId: FixtureScenarioId) => Promise<HourlyAircraftSnapshot[]>
+  getSnapshots: (query: SnapshotIngestionQuery) => Promise<SnapshotIngestionResult>
   listScenarioIds: () => FixtureScenarioId[]
 }

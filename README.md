@@ -28,6 +28,31 @@ npm run preview
 npm run test
 ```
 
+## 真实数据与 PostgreSQL 配置
+
+默认模式仍为 mock；未配置环境变量时，系统继续使用内置 fixture。
+
+可选环境变量：
+
+- `ANOMALY_INGESTION_MODE`：`mock`、`real`、`real-with-fallback`
+- `ANOMALY_PG_URL` 或 `DATABASE_URL`：PostgreSQL 连接串
+- `ANOMALY_REAL_SOURCE_URL`：真实数据 provider 地址
+- `ANOMALY_REAL_SOURCE_TOKEN`：真实数据 provider Bearer Token
+- `ANOMALY_REAL_SOURCE_TIMEOUT_MS`：请求超时，默认 `5000`
+- `ANOMALY_REAL_SOURCE_FRESHNESS_MINUTES`：数据新鲜度阈值，默认 `90`
+- `ANOMALY_ALLOW_MOCK_FALLBACK`：是否允许在真实源失败时回退到 mock
+
+示例：
+
+```bash
+export ANOMALY_INGESTION_MODE=real-with-fallback
+export ANOMALY_PG_URL=postgres://postgres:postgres@localhost:5432/aether_watch
+export ANOMALY_REAL_SOURCE_URL=https://example.com/aircraft/hourly
+export ANOMALY_REAL_SOURCE_TOKEN=replace-me
+```
+
+如需快速回滚到纯 mock 模式，只需将 `ANOMALY_INGESTION_MODE` 设回 `mock`，无需清理 PostgreSQL 中已写入的数据。
+
 ## 当前 MVP 能力
 
 - 以 mock 小时级航空快照作为数据源，通过摄取接口加载场景数据。
